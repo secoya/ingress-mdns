@@ -1,0 +1,67 @@
+---
+kind: ServiceAccount
+apiVersion: v1
+metadata:
+  name: ingress-frontend-zeroconf
+  namespace: kube-system
+---
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1beta1
+metadata:
+  name: ingress-frontend-zeroconf
+  namespace: kube-system
+rules:
+  - apiGroups: [""]
+    resources: [services]
+    verbs: [get]
+  - apiGroups: [extensions]
+    resources: [ingresses]
+    verbs: [list, watch]
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1beta1
+metadata:
+  name: ingress-frontend-zeroconf
+  namespace: kube-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: ingress-frontend-zeroconf
+subjects:
+- kind: ServiceAccount
+  name: ingress-frontend-zeroconf
+  namespace: kube-system
+---
+kind: Deployment
+apiVersion: apps/v1beta2
+metadata:
+  name: ingress-frontend-zeroconf
+  namespace: kube-system
+spec:
+  replicas: 1
+  template:
+  selector:
+    matchLabels:
+      name: ingress-frontend-zeroconf
+  template:
+    metadata:
+      labels:
+        name: ingress-frontend-zeroconf
+    spec:
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      serviceAccountName: ingress-frontend-zeroconf
+      terminationGracePeriodSeconds: 60
+      containers:
+      - name: ingress-frontend-zeroconf
+        image: andsens/ingress-frontend-zeroconf
+        args:
+        - --service=traefik-ingress-service.kube-system
+        securityContext:
+          readOnlyRootFilesystem: true
+        volumeMounts:
+        - mountPath: /tmp
+          name: tmp-volume
+      volumes:
+      - name: tmp-volume
+        emptyDir: {}
