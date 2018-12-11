@@ -7,7 +7,6 @@ import (
 	"os/signal"
 	"path/filepath"
 	"reflect"
-	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -15,7 +14,6 @@ import (
 	v1 "k8s.io/api/core/v1"
 	v1beta1 "k8s.io/api/extensions/v1beta1"
 	"k8s.io/apimachinery/pkg/fields"
-	"k8s.io/apimachinery/pkg/util/intstr"
 
 	docopt "github.com/docopt/docopt-go"
 	"github.com/grandcat/zeroconf"
@@ -42,10 +40,10 @@ Options:
   --interface=name  Interface on which to broadcast [default: eth0]
   --service=name    Ingress controller service name & namespace
                     [default: default-http-backend.kube-system]
-  --cleartext-port=port  Target port used for cleartext connections
-                         to the service [default: 80]
-  --tls-port=port   Target port used for TLS connections to the service
-                    [default: 443]
+  --cleartext-port=port  Name of port used for cleartext connections
+                         to the service [default: http]
+  --tls-port=port   Name of target port used for TLS connections
+                    to the service [default: https]
   --kubeconfig      Use $HOME/.kube config instead of in-cluster config
   --debug           Print debugging information
   -h, --help        show this help`
@@ -63,31 +61,35 @@ Options:
 	if err != nil {
 		log.Panic(err.Error())
 	}
-	broadcastInterface, broadcastIPs := getBroadcastInterface(interfaceName)
+	broadcastInterface := getInterfaceByName(interfaceName)
 
 	useKubeConfig, err := arguments.Bool("--kubeconfig")
 	clientset := getKubernetesClientSet(useKubeConfig)
 
-	portMapper := getPortMapper(arguments, clientset)
+	ingressIP, portMapper := getServiceInfo(arguments, clientset)
 
 	var zeroconfServers = map[LocalHostname]*zeroconf.Server{}
 	defer unregisterAllHostnames(zeroconfServers)
 	watcher := cache.NewListWatchFromClient(clientset.ExtensionsV1beta1().RESTClient(), "ingresses", v1.NamespaceAll, fields.Everything())
+	log.Debugf("Watching ingresses")
 	_, controller := cache.NewInformer(watcher, &v1beta1.Ingress{}, time.Second*30, cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
 			hostnames := getIngressHostnames(obj.(*v1beta1.Ingress))
-			registerHostnames(hostnames, portMapper, broadcastInterface, broadcastIPs, zeroconfServers)
+			registerHostnames(hostnames, portMapper, broadcastInterface, ingressIP, zeroconfServers)
 		},
 		DeleteFunc: func(obj interface{}) {
 			hostnames := getIngressHostnames(obj.(*v1beta1.Ingress))
 			unregisterHostnames(hostnames, zeroconfServers)
 		},
 		UpdateFunc: func(oldObj interface{}, newObj interface{}) {
-			oldHostnames := getIngressHostnames(oldObj.(*v1beta1.Ingress))
-			newHostnames := getIngressHostnames(newObj.(*v1beta1.Ingress))
+			oldIngress := oldObj.(*v1beta1.Ingress)
+			newIngress := oldObj.(*v1beta1.Ingress)
+			oldHostnames := getIngressHostnames(oldIngress)
+			newHostnames := getIngressHostnames(newIngress)
 			if !reflect.DeepEqual(oldHostnames, newHostnames) {
+				log.Infof("Ingress %v changed, re-registering hostnames", oldIngress.Name)
 				unregisterHostnames(oldHostnames, zeroconfServers)
-				registerHostnames(newHostnames, portMapper, broadcastInterface, broadcastIPs, zeroconfServers)
+				registerHostnames(newHostnames, portMapper, broadcastInterface, ingressIP, zeroconfServers)
 			}
 		},
 	})
@@ -106,25 +108,17 @@ Options:
 	<-stop
 }
 
-func getBroadcastInterface(interfaceName string) (net.Interface, []string) {
-	log.Debugf("Determining IPs of %v", interfaceName)
+func getInterfaceByName(interfaceName string) net.Interface {
 	ifaces, _ := net.Interfaces()
-	ifaceList := ""
+	ifaceNames := []string{}
 	for _, iface := range ifaces {
-		addrs, _ := iface.Addrs()
-		addresses := []string{}
-		for _, addr := range addrs {
-			split := strings.SplitN(addr.String(), "/", 2)
-			ip := split[0]
-			addresses = append(addresses, ip)
-		}
 		if iface.Name == interfaceName {
-			log.Debugf("Broadcast IPs are: %v", strings.Join(addresses, ", "))
-			return iface, addresses
+			log.Debugf("Found interface %v", interfaceName)
+			return iface
 		}
-		ifaceList = ifaceList + fmt.Sprintf("%v (IPs: %v)\n", iface.Name, strings.Join(addresses, ", "))
+		ifaceNames = append(ifaceNames, iface.Name)
 	}
-	log.Panicf("No IP found for interface %v, available interfaces are:\n%v", interfaceName, ifaceList)
+	log.Panicf("No interface named %v was found, available interfaces are:\n%v", interfaceName, strings.Join(ifaceNames, "\n"))
 	panic("")
 }
 
@@ -153,24 +147,60 @@ func getKubernetesClientSet(useKubeConfig bool) *kubernetes.Clientset {
 	return clientset
 }
 
-func getPortMapper(arguments docopt.Opts, clientset *kubernetes.Clientset) func(LocalHostname) (int, error) {
+func getServiceInfo(arguments docopt.Opts, clientset *kubernetes.Clientset) (net.IP, func(LocalHostname) (int, error)) {
+	// Get all service info
+	serviceFQName, _ := arguments.String("--service")
+	if strings.Count(serviceFQName, ".") != 1 {
+		log.Panicf("--service must be supplied as SERVICENAME.NAMESPACE, you gave %v", serviceFQName)
+	}
+	split := strings.SplitN(serviceFQName, ".", 2)
+	serviceName := split[0]
+	serviceNamespace := split[1]
+	service, err := clientset.CoreV1().Services(serviceNamespace).Get(serviceName, metav1.GetOptions{})
+	if err != nil {
+		log.Panic(err.Error())
+	}
+
+	// Determine loadbalancer IP of service
+	ingressIPs := []string{}
+	for _, ingress := range service.Status.LoadBalancer.Ingress {
+		ingressIPs = append(ingressIPs, ingress.IP)
+	}
+	if cap(ingressIPs) != 1 {
+		log.Panicf("Multiple Ingress IPs for service %v to choose from (expected only one):\n%v", serviceFQName, strings.Join(ingressIPs, "\n"))
+	}
+	ingressIP := net.ParseIP(ingressIPs[0])
+	log.Debugf("Ingress IP is %v", ingressIP)
+
+	// Map cleartext and tls port names to numbers
 	// Only map/lookup ports on demand, if one of them is not defined in
 	// the service we only want to fail if an ingress actually
 	// makes use of that port.
-	serviceFQName, _ := arguments.String("--service")
-	portMap := getPortMap(clientset, serviceFQName)
-	cleartextPort, tlsPort := getPortArgs(arguments)
-	return func(local LocalHostname) (int, error) {
+	cleartextPortName, _ := arguments.String("--cleartext-port")
+	tlsPortName, _ := arguments.String("--tls-port")
+	var cleartextPort int
+	var tlsPort int
+	for _, port := range service.Spec.Ports {
+		if port.Name == cleartextPortName {
+			cleartextPort = int(port.Port)
+			log.Debugf("Cleartext port number is %v", cleartextPort)
+		}
+		if port.Name == tlsPortName {
+			tlsPort = int(port.Port)
+			log.Debugf("TLS port number is %v", tlsPort)
+		}
+	}
+	return ingressIP, func(local LocalHostname) (int, error) {
 		if local.TLS {
-			if nodePort, exists := portMap[tlsPort]; exists {
-				return nodePort, nil
+			if tlsPort != 0 {
+				return tlsPort, nil
 			}
 			return 0, fmt.Errorf("Unable to register %v, tls target port %v "+
 				"not present in ingress controller service %v",
 				local.Hostname, tlsPort, serviceFQName)
 		}
-		if nodePort, exists := portMap[cleartextPort]; exists {
-			return nodePort, nil
+		if cleartextPort != 0 {
+			return cleartextPort, nil
 		}
 		return 0, fmt.Errorf("Unable to register %v, cleartext target port %v "+
 			"not present in ingress controller service %v",
@@ -178,49 +208,11 @@ func getPortMapper(arguments docopt.Opts, clientset *kubernetes.Clientset) func(
 	}
 }
 
-func getPortMap(clientset *kubernetes.Clientset, serviceFQName string) map[intstr.IntOrString]int {
-	log.Debugf("Getting port mapping for %v", serviceFQName)
-	if strings.Count(serviceFQName, ".") != 1 {
-		log.Panicf("--service must be supplied as SERVICENAME.NAMESPACE, you gave %v", serviceFQName)
-	}
-	split := strings.SplitN(serviceFQName, ".", 2)
-	serviceName := split[0]
-	namespace := split[1]
-	service, err := clientset.CoreV1().Services(namespace).Get(serviceName, metav1.GetOptions{})
-	portMap := make(map[intstr.IntOrString]int)
-	if err != nil {
-		log.Panic(err.Error())
-	}
-	for _, port := range service.Spec.Ports {
-		portMap[port.TargetPort] = int(port.NodePort)
-	}
-	log.Debugf("Port mapping for %v is:\n %v", serviceFQName, portMap)
-	return portMap
-}
-
-func getPortArgs(arguments docopt.Opts) (intstr.IntOrString, intstr.IntOrString) {
-	var cleartextPort intstr.IntOrString
-	var tlsPort intstr.IntOrString
-	cleartextPortStr, _ := arguments.String("--cleartext-port")
-	if cleartextPortInt, err := strconv.Atoi(cleartextPortStr); err == nil {
-		cleartextPort = intstr.FromInt(cleartextPortInt)
-	} else {
-		cleartextPort = intstr.FromString(cleartextPortStr)
-	}
-	tlsPortStr, _ := arguments.String("--tls-port")
-	if tlsPortInt, err := strconv.Atoi(tlsPortStr); err == nil {
-		tlsPort = intstr.FromInt(tlsPortInt)
-	} else {
-		tlsPort = intstr.FromString(tlsPortStr)
-	}
-	return cleartextPort, tlsPort
-}
-
 func registerHostnames(
 	hostnames []LocalHostname,
 	portMapper func(LocalHostname) (int, error),
 	broadcastInterface net.Interface,
-	broadcastIPs []string,
+	ingressIP net.IP,
 	servers map[LocalHostname]*zeroconf.Server,
 ) {
 	defer func() {
@@ -241,8 +233,8 @@ func registerHostnames(
 			"local.",
 			port,
 			local.Hostname,
-			broadcastIPs,
-			[]string{"txtv=0", "lo=1", "la=2"},
+			[]string{ingressIP.String()},
+			[]string{"path=/"},
 			[]net.Interface{broadcastInterface},
 		)
 		if err != nil {
