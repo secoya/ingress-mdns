@@ -162,14 +162,14 @@ func getServiceInfo(arguments docopt.Opts, clientset *kubernetes.Clientset) (net
 	}
 
 	// Determine loadbalancer IP of service
-	ingressIPs := []string{}
-	for _, ingress := range service.Status.LoadBalancer.Ingress {
-		ingressIPs = append(ingressIPs, ingress.IP)
-	}
-	if cap(ingressIPs) != 1 {
-		log.Panicf("Multiple Ingress IPs for service %v to choose from (expected only one):\n%v", serviceFQName, strings.Join(ingressIPs, "\n"))
-	}
-	ingressIP := net.ParseIP(ingressIPs[0])
+	// ingressIPs := []string{}
+	// for _, ingress := range service.Status.LoadBalancer.Ingress {
+	// 	ingressIPs = append(ingressIPs, ingress.IP)
+	// }
+	// if cap(ingressIPs) != 1 {
+	// 	log.Panicf("Multiple Ingress IPs for service %v to choose from (expected only one):\n%v", serviceFQName, strings.Join(ingressIPs, "\n"))
+	// }
+	ingressIP := net.ParseIP("10.24.79.157")
 	log.Debugf("Ingress IP is %v", ingressIP)
 
 	// Map cleartext and tls port names to numbers
@@ -269,10 +269,10 @@ func getIngressHostnames(ingress *v1beta1.Ingress) []LocalHostname {
 	hostnames := []LocalHostname{}
 	for _, rule := range ingress.Spec.Rules {
 		hostname := rule.Host
-		if !strings.HasSuffix(hostname, ".local") {
+		if !strings.HasSuffix(hostname, ".kube") {
 			continue
 		}
-		hostnames = append(hostnames, LocalHostname{tls, strings.TrimSuffix(hostname, ".local")})
+		hostnames = append(hostnames, LocalHostname{tls, strings.TrimSuffix(hostname, ".kube")})
 	}
 	return hostnames
 }

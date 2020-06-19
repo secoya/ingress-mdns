@@ -2,14 +2,12 @@
 kind: ServiceAccount
 apiVersion: v1
 metadata:
-  name: ingress-frontend-zeroconf
-  namespace: kube-system
+  name: ingress-mdns
 ---
 kind: ClusterRole
 apiVersion: rbac.authorization.k8s.io/v1beta1
 metadata:
-  name: ingress-frontend-zeroconf
-  namespace: kube-system
+  name: ingress-mdns
 rules:
   - apiGroups: [""]
     resources: [services]
@@ -21,42 +19,43 @@ rules:
 kind: ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/v1beta1
 metadata:
-  name: ingress-frontend-zeroconf
-  namespace: kube-system
+  name: ingress-mdns
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: ingress-frontend-zeroconf
+  name: ingress-mdns
 subjects:
 - kind: ServiceAccount
-  name: ingress-frontend-zeroconf
-  namespace: kube-system
+  name: ingress-mdns
 ---
 kind: Deployment
-apiVersion: apps/v1beta2
+apiVersion: apps/v1
 metadata:
-  name: ingress-frontend-zeroconf
-  namespace: kube-system
+  name: ingress-mdns
 spec:
-  replicas: 1
-  template:
   selector:
     matchLabels:
-      name: ingress-frontend-zeroconf
+      name: ingress-mdns
   template:
     metadata:
       labels:
-        name: ingress-frontend-zeroconf
+        name: ingress-mdns
     spec:
       hostNetwork: true
       dnsPolicy: ClusterFirstWithHostNet
-      serviceAccountName: ingress-frontend-zeroconf
+      serviceAccountName: ingress-mdns
       terminationGracePeriodSeconds: 60
       containers:
-      - name: ingress-frontend-zeroconf
-        image: andsens/ingress-frontend-zeroconf
+      - name: ingress-mdns
+        image: localhost:32000/dev/ingress-mdns
         args:
-        - --service=traefik-ingress-service.kube-system
+        - --service=traefik.traefik
+        - --interface=eno1
+        env:
+        - name: HOST_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.hostIP
         securityContext:
           readOnlyRootFilesystem: true
         volumeMounts:

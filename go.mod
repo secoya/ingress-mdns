@@ -1,4 +1,4 @@
-module github.com/andsens/ingress-frontend-zeroconf
+module github.com/secoya/ingress-mdns
 
 require (
 	github.com/cenkalti/backoff v2.1.0+incompatible // indirect
