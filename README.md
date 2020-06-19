@@ -1,9 +1,9 @@
-# Ingress Frontend Zeroconf
+# Ingress mDNS
 
-This tool is mainly intended for minikube setups. It watches the kubernetes API
+This tool is mainly intended for local dev setups. It watches kubernetes
 for any ingresses and broadcasts the hostnames in their rule spec
-to the interface that connects minikube to your host machine.
+to the interface of your choosing.
 
 ## Install
 
-`skaffold deploy`
+`tilt up`

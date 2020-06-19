@@ -48,9 +48,6 @@ spec:
       containers:
       - name: ingress-mdns
         image: localhost:32000/dev/ingress-mdns
-        args:
-        - --service=traefik.traefik
-        - --interface=eno1
         env:
         - name: HOST_IP
           valueFrom:
