@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"net"
 	"os"
 	"os/signal"
@@ -154,7 +155,7 @@ func registerHostnames(
 		}
 		server, err := zeroconf.RegisterProxy(
 			local.Hostname,
-			"_http._tcp.",
+			fmt.Sprintf("%s,_http._tcp", local.Hostname),
 			"local.",
 			port,
 			local.Hostname,
