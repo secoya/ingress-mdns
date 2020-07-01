@@ -4,4 +4,4 @@ namespace: kube-system
 commonLabels:
   app.kubernetes.io/name: ingress-mdns
 resources:
-- ingress-mdns.yaml
+- ../base
