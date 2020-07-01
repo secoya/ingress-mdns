@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"net"
 	"os"
 	"os/signal"
@@ -11,7 +10,6 @@ import (
 	"time"
 
 	docopt "github.com/docopt/docopt-go"
-	"github.com/grandcat/zeroconf"
 	log "github.com/sirupsen/logrus"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/api/extensions/v1beta1"
@@ -66,7 +64,7 @@ Notes:
 	broadcastIP := net.ParseIP(os.Getenv("HOST_IP"))
 	broadcastInterface := getInterfaceByIP(broadcastIP)
 
-	var zeroconfServers = map[LocalHostname]*zeroconf.Server{}
+	var zeroconfServers = map[LocalHostname]*Server{}
 	defer unregisterAllHostnames(zeroconfServers)
 
 	watcher := cache.NewListWatchFromClient(clientset.ExtensionsV1beta1().RESTClient(), "ingresses", v1.NamespaceAll, fields.Everything())
@@ -147,7 +145,7 @@ func registerHostnames(
 	arguments docopt.Opts,
 	hostnames []LocalHostname,
 	iface net.Interface,
-	servers map[LocalHostname]*zeroconf.Server,
+	servers map[LocalHostname]*Server,
 ) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -165,9 +163,9 @@ func registerHostnames(
 		for _, ip := range getInterfaceIPs(iface) {
 			ifaceIPs = append(ifaceIPs, ip.String())
 		}
-		server, err := zeroconf.RegisterProxy(
+		server, err := RegisterProxy(
 			local.Hostname,
-			fmt.Sprintf("%s,_http._tcp", local.Hostname),
+			"_http._tcp",
 			"local.",
 			port,
 			local.Hostname,
@@ -182,7 +180,7 @@ func registerHostnames(
 	}
 }
 
-func unregisterHostnames(hostnames []LocalHostname, servers map[LocalHostname]*zeroconf.Server) {
+func unregisterHostnames(hostnames []LocalHostname, servers map[LocalHostname]*Server) {
 	for _, local := range hostnames {
 		if server, exists := servers[local]; exists {
 			log.Infof("Unregistering %v", local.Hostname)
@@ -192,7 +190,7 @@ func unregisterHostnames(hostnames []LocalHostname, servers map[LocalHostname]*z
 	}
 }
 
-func unregisterAllHostnames(servers map[LocalHostname]*zeroconf.Server) {
+func unregisterAllHostnames(servers map[LocalHostname]*Server) {
 	for local, server := range servers {
 		log.Infof("Unregistering %v", local.Hostname)
 		server.Shutdown()

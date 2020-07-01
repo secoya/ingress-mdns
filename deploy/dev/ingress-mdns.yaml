@@ -9,6 +9,8 @@ spec:
       containers:
       - name: ingress-mdns
         image: localhost:32000/dev/ingress-mdns
+        args:
+        - --debug
         volumeMounts:
         - name: ingress-mdns
           mountPath: /ingress-mdns
