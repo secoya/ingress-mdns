@@ -9,9 +9,6 @@ apiVersion: rbac.authorization.k8s.io/v1beta1
 metadata:
   name: ingress-mdns
 rules:
-  - apiGroups: [""]
-    resources: [services]
-    verbs: [get]
   - apiGroups: [extensions]
     resources: [ingresses]
     verbs: [list, watch]
