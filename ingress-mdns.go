@@ -82,7 +82,7 @@ Notes:
 		},
 		UpdateFunc: func(oldObj interface{}, newObj interface{}) {
 			oldIngress := oldObj.(*v1beta1.Ingress)
-			newIngress := oldObj.(*v1beta1.Ingress)
+			newIngress := newObj.(*v1beta1.Ingress)
 			oldHostnames := getIngressHostnames(oldIngress)
 			newHostnames := getIngressHostnames(newIngress)
 			if !reflect.DeepEqual(oldHostnames, newHostnames) {
