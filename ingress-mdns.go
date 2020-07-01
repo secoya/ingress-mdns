@@ -74,7 +74,7 @@ Notes:
 	_, controller := cache.NewInformer(watcher, &v1beta1.Ingress{}, time.Second*30, cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
 			hostnames := getIngressHostnames(obj.(*v1beta1.Ingress))
-			registerHostnames(arguments, hostnames, broadcastIP, broadcastInterface, zeroconfServers)
+			registerHostnames(arguments, hostnames, broadcastInterface, zeroconfServers)
 		},
 		DeleteFunc: func(obj interface{}) {
 			hostnames := getIngressHostnames(obj.(*v1beta1.Ingress))
@@ -88,7 +88,7 @@ Notes:
 			if !reflect.DeepEqual(oldHostnames, newHostnames) {
 				log.Infof("Ingress %v changed, re-registering hostnames", oldIngress.Name)
 				unregisterHostnames(oldHostnames, zeroconfServers)
-				registerHostnames(arguments, newHostnames, broadcastIP, broadcastInterface, zeroconfServers)
+				registerHostnames(arguments, newHostnames, broadcastInterface, zeroconfServers)
 			}
 		},
 	})
@@ -111,34 +111,42 @@ func getInterfaceByIP(broadcastIP net.IP) net.Interface {
 	ifaces, _ := net.Interfaces()
 	ifaceIPs := []string{}
 	for _, iface := range ifaces {
-		addrs, err := iface.Addrs()
-		if err != nil {
-			log.Panic(err.Error())
-		}
-		for _, addr := range addrs {
-			var ifaceIP net.IP
-			switch v := addr.(type) {
-			case *net.IPNet:
-				ifaceIP = v.IP
-			case *net.IPAddr:
-				ifaceIP = v.IP
-			}
-			if net.IP.Equal(ifaceIP, broadcastIP) {
+		ips := getInterfaceIPs(iface)
+		for _, ip := range ips {
+			if net.IP.Equal(ip, broadcastIP) {
 				log.Debugf("Found interface %v", iface.Name)
 				return iface
 			}
+			ifaceIPs = append(ifaceIPs, ip.String())
 		}
-		ifaceIPs = append(ifaceIPs, iface.Name)
 	}
-	log.Panicf("No interface with IP %v was found, available interfaces are:\n%v", broadcastIP, strings.Join(ifaceIPs, "\n"))
+	log.Panicf("No interface with IP %v was found, available IPs are:\n%v", broadcastIP, strings.Join(ifaceIPs, "\n"))
 	panic("")
+}
+
+func getInterfaceIPs(iface net.Interface) []net.IP {
+	ifaceIPs := []net.IP{}
+	addrs, err := iface.Addrs()
+	if err != nil {
+		log.Panic(err.Error())
+	}
+	for _, addr := range addrs {
+		var ifaceIP net.IP
+		switch v := addr.(type) {
+		case *net.IPNet:
+			ifaceIP = v.IP
+		case *net.IPAddr:
+			ifaceIP = v.IP
+		}
+		ifaceIPs = append(ifaceIPs, ifaceIP)
+	}
+	return ifaceIPs
 }
 
 func registerHostnames(
 	arguments docopt.Opts,
 	hostnames []LocalHostname,
-	broadcastIP net.IP,
-	broadcastInterface net.Interface,
+	iface net.Interface,
 	servers map[LocalHostname]*zeroconf.Server,
 ) {
 	defer func() {
@@ -153,15 +161,19 @@ func registerHostnames(
 		if local.TLS {
 			port, _ = arguments.Int("--tls-port")
 		}
+		ifaceIPs := []string{}
+		for _, ip := range getInterfaceIPs(iface) {
+			ifaceIPs = append(ifaceIPs, ip.String())
+		}
 		server, err := zeroconf.RegisterProxy(
 			local.Hostname,
 			fmt.Sprintf("%s,_http._tcp", local.Hostname),
 			"local.",
 			port,
 			local.Hostname,
-			[]string{broadcastIP.String()},
+			ifaceIPs,
 			[]string{"path=/"},
-			[]net.Interface{broadcastInterface},
+			[]net.Interface{iface},
 		)
 		if err != nil {
 			log.Panic(err.Error())
