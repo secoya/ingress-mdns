@@ -30,6 +30,11 @@ apiVersion: apps/v1
 metadata:
   name: ingress-mdns
 spec:
+  strategy:
+    rollingUpdate:
+      # We bind to fixed host ports on the host network,
+      # make sure the old pod is killed before updating to a new one
+      maxUnavailable: '100%'
   selector:
     matchLabels:
       name: ingress-mdns
