@@ -1,4 +1,4 @@
-FROM golang:1.14-alpine
+FROM golang:1.17-alpine
 RUN apk add --no-cache git bash zsh g++
 RUN go get -v golang.org/x/tools/cmd/goimports
 RUN go get -v github.com/stamblerre/gocode

@@ -5,3 +5,6 @@ commonLabels:
   app.kubernetes.io/name: ingress-mdns
 resources:
 - ingress-mdns.yaml
+images:
+- name: cr.orbit.dev/dev/ingress-mdns
+  newTag: v2.0.0

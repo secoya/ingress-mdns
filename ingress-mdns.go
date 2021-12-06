@@ -12,7 +12,7 @@ import (
 	docopt "github.com/docopt/docopt-go"
 	log "github.com/sirupsen/logrus"
 	v1 "k8s.io/api/core/v1"
-	"k8s.io/api/extensions/v1beta1"
+	k8snet "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -67,20 +67,20 @@ Notes:
 	var zeroconfServers = map[LocalHostname]*Server{}
 	defer unregisterAllHostnames(zeroconfServers)
 
-	watcher := cache.NewListWatchFromClient(clientset.ExtensionsV1beta1().RESTClient(), "ingresses", v1.NamespaceAll, fields.Everything())
+	watcher := cache.NewListWatchFromClient(clientset.NetworkingV1().RESTClient(), "ingresses", v1.NamespaceAll, fields.Everything())
 	log.Debugf("Watching ingresses")
-	_, controller := cache.NewInformer(watcher, &v1beta1.Ingress{}, time.Second*30, cache.ResourceEventHandlerFuncs{
+	_, controller := cache.NewInformer(watcher, &k8snet.Ingress{}, time.Second*30, cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
-			hostnames := getIngressHostnames(obj.(*v1beta1.Ingress))
+			hostnames := getIngressHostnames(obj.(*k8snet.Ingress))
 			registerHostnames(arguments, hostnames, broadcastInterface, zeroconfServers)
 		},
 		DeleteFunc: func(obj interface{}) {
-			hostnames := getIngressHostnames(obj.(*v1beta1.Ingress))
+			hostnames := getIngressHostnames(obj.(*k8snet.Ingress))
 			unregisterHostnames(hostnames, zeroconfServers)
 		},
 		UpdateFunc: func(oldObj interface{}, newObj interface{}) {
-			oldIngress := oldObj.(*v1beta1.Ingress)
-			newIngress := newObj.(*v1beta1.Ingress)
+			oldIngress := oldObj.(*k8snet.Ingress)
+			newIngress := newObj.(*k8snet.Ingress)
 			oldHostnames := getIngressHostnames(oldIngress)
 			newHostnames := getIngressHostnames(newIngress)
 			if !reflect.DeepEqual(oldHostnames, newHostnames) {
@@ -197,7 +197,7 @@ func unregisterAllHostnames(servers map[LocalHostname]*Server) {
 	}
 }
 
-func getIngressHostnames(ingress *v1beta1.Ingress) []LocalHostname {
+func getIngressHostnames(ingress *k8snet.Ingress) []LocalHostname {
 	// The same ingress can have both cleartext and tls hosts.
 	// This is not implemented yet, for now we just check for the presence
 	// of the tls.
