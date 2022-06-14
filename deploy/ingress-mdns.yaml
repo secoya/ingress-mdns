@@ -3,11 +3,15 @@ kind: ServiceAccount
 apiVersion: v1
 metadata:
   name: ingress-mdns
+  labels:
+    app.kubernetes.io/name: ingress-mdns
 ---
 kind: ClusterRole
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
   name: ingress-mdns
+  labels:
+    app.kubernetes.io/name: ingress-mdns
 rules:
   - apiGroups: [extensions]
     resources: [ingresses]
@@ -17,6 +21,8 @@ kind: ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
   name: ingress-mdns
+  labels:
+    app.kubernetes.io/name: ingress-mdns
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
@@ -29,6 +35,8 @@ kind: Deployment
 apiVersion: apps/v1
 metadata:
   name: ingress-mdns
+  labels:
+    app.kubernetes.io/name: ingress-mdns
 spec:
   strategy:
     rollingUpdate:
@@ -37,11 +45,11 @@ spec:
       maxUnavailable: '100%'
   selector:
     matchLabels:
-      name: ingress-mdns
+      app.kubernetes.io/name: ingress-mdns
   template:
     metadata:
       labels:
-        name: ingress-mdns
+        app.kubernetes.io/name: ingress-mdns
     spec:
       hostNetwork: true
       dnsPolicy: ClusterFirstWithHostNet
@@ -49,7 +57,7 @@ spec:
       terminationGracePeriodSeconds: 60
       containers:
       - name: ingress-mdns
-        image: cr.orbit.dev/dev/ingress-mdns
+        image: cr.orbit.dev/dev/ingress-mdns:v2.0.0
         env:
         - name: HOST_IP
           valueFrom:
@@ -59,7 +67,7 @@ spec:
           readOnlyRootFilesystem: true
         volumeMounts:
         - mountPath: /tmp
-          name: tmp-volume
+          name: tmp
       volumes:
-      - name: tmp-volume
+      - name: tmp
         emptyDir: {}
