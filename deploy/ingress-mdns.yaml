@@ -2,6 +2,7 @@
 kind: ServiceAccount
 apiVersion: v1
 metadata:
+  namespace: default # kpt-set: ${ingress-mdns-namespace}
   name: ingress-mdns
   labels:
     app.kubernetes.io/name: ingress-mdns
@@ -29,11 +30,13 @@ roleRef:
   name: ingress-mdns
 subjects:
 - kind: ServiceAccount
+  namespace: default # kpt-set: ${ingress-mdns-namespace}
   name: ingress-mdns
 ---
 kind: Deployment
 apiVersion: apps/v1
 metadata:
+  namespace: default # kpt-set: ${ingress-mdns-namespace}
   name: ingress-mdns
   labels:
     app.kubernetes.io/name: ingress-mdns
